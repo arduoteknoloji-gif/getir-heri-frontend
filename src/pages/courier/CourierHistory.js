@@ -23,9 +23,10 @@ export default function CourierHistory() {
 
     try {
       const { data } = await api.get('/orders');
-      // Backend { orders: [...] } formatında dönüyor
-      const ordersData = data?.orders || (Array.isArray(data) ? data : []);
 
+      // GÜVENLİK: data her zaman dizi olmayabilir
+      const ordersData = Array.isArray(data) ? data : (data?.data || []);
+      
       const deliveredOrders = ordersData.filter((o) =>
         o.courier_id === user._id &&
         (o.status === 'delivered' || o.status === 'cancelled')
@@ -35,7 +36,7 @@ export default function CourierHistory() {
     } catch (error) {
       console.error('History fetch error:', error);
       toast.error('Geçmiş yüklenemedi');
-      setOrders([]);
+      setOrders([]); // Hata durumunda boş dizi
     } finally {
       setLoading(false);
     }

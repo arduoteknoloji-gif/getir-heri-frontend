@@ -1,22 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, Linking
-} from 'react-native';
-import * as Location from 'expo-location';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { ArrowLeft, MapPin, Phone, Package, Storefront, Compass, CreditCard, Money } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 
-const PURPLE = '#5C3EFF';
+export default function CourierOrderDetail() {
+  const { orderId } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-const STATUSES = [
-  { key: 'assigned', label: 'Atandı' },
-  { key: 'picked_up', label: 'Alındı' },
-  { key: 'in_transit', label: 'Yolda' },
-  { key: 'delivered', label: 'Teslim Edildi' },
-];
-
-export default function CourierOrderDetail({ route, navigation }) {
-  const { orderId } = route.params;
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -24,213 +21,256 @@ export default function CourierOrderDetail({ route, navigation }) {
 
   const fetchOrder = useCallback(async () => {
     try {
+      setLoading(true);
       const { data } = await api.get(`/orders/${orderId}`);
-      setOrder(data);
-    } catch (e) {
-      Alert.alert('Hata', 'Sipariş yüklenemedi');
-      navigation.goBack();
+      setOrder(data?.data || data || null);
+    } catch (error) {
+      console.error('Sipariş getirme hatası:', error);
+      toast.error('Sipariş yüklenemedi');
+      navigate('/courier/dashboard');
     } finally {
       setLoading(false);
     }
-  }, [orderId]);
+  }, [orderId, navigate]);
+
+  // Tarayıcı Geolocation API'si (expo yerine)
+  useEffect(() => {
+    if (navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setCourierLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (err) => console.error('Konum hatası:', err),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
+  }, []);
+
+  // Konum güncelle
+  const updateCourierLocation = useCallback(async (location) => {
+    if (!user?._id || !location) return;
+    try {
+      await api.patch(`/couriers/${user._id}/location`, {
+        lat: location.lat,
+        lng: location.lng,
+      });
+    } catch (error) {
+      console.error('Konum güncelleme hatası:', error);
+    }
+  }, [user?._id]);
 
   useEffect(() => {
-    fetchOrder();
-    // Konum izni
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({});
-        setCourierLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      }
-    })();
-  }, []);
+    if (orderId) fetchOrder();
+  }, [orderId, fetchOrder]);
+
+  useEffect(() => {
+    if (courierLocation && order && order.status !== 'delivered') {
+      updateCourierLocation(courierLocation);
+    }
+  }, [courierLocation, order, updateCourierLocation]);
 
   const updateStatus = async (newStatus) => {
     if (updating || order?.status === 'delivered') return;
     setUpdating(true);
     try {
       await api.patch(`/orders/${orderId}`, { status: newStatus });
-      await fetchOrder();
-    } catch (e) {
-      Alert.alert('Hata', 'Durum güncellenemedi');
+      toast.success('Durum güncellendi');
+      fetchOrder();
+    } catch (error) {
+      toast.error('Durum güncellenemedi');
     } finally {
       setUpdating(false);
     }
   };
 
-  const openNavigation = () => {
-    if (!courierLocation || !order) return;
-    const dest = order.status === 'assigned'
-      ? `${order.pickup_lat},${order.pickup_lng}`
-      : `${order.customer_lat},${order.customer_lng}`;
-    Linking.openURL(
-      `https://www.google.com/maps/dir/?api=1&origin=${courierLocation.lat},${courierLocation.lng}&destination=${dest}&travelmode=driving`
-    );
-  };
-
-  const callCustomer = () => {
-    if (order?.customer_phone) {
-      Linking.openURL(`tel:${order.customer_phone}`);
-    }
-  };
-
   const getPaymentInfo = () => {
-    if (!order) return {};
-    const total = (order.total_amount || 0) + (order.delivery_fee || 0);
+    if (!order?.payment_method) {
+      return { icon: <Money size={22} className="text-muted-foreground" />, title: "Ödeme Yöntemi Belirtilmemiş", subtitle: "", amount: (order?.total_amount || 0) + (order?.delivery_fee || 0), color: "text-muted-foreground" };
+    }
+    const totalToCollect = (order.total_amount || 0) + (order.delivery_fee || 0);
     switch (order.payment_method) {
-      case 'online': return { label: '✅ Online Ödeme Yapıldı', color: '#065F46', amount: null };
-      case 'cash_on_delivery': return { label: '💵 Kapıda Nakit', color: '#92400E', amount: total };
-      case 'card_on_delivery': return { label: '💳 Kapıda Kredi Kartı', color: '#1E40AF', amount: total };
-      default: return { label: 'Belirtilmemiş', color: '#555', amount: total };
+      case 'online':
+        return { icon: <CreditCard size={22} className="text-green-600" />, title: "Online Ödeme Yapıldı", subtitle: "Kuryeye ödeme yapılmayacak", amount: null, color: "text-green-600" };
+      case 'cash_on_delivery':
+        return { icon: <Money size={22} className="text-amber-600" />, title: "Kapıda Nakit Ödeme", subtitle: "Müşteriden alınacak tutar", amount: totalToCollect, color: "text-amber-600" };
+      case 'card_on_delivery':
+        return { icon: <CreditCard size={22} className="text-blue-600" />, title: "Kapıda Kredi Kartı", subtitle: "POS cihazı ile tahsil edilecek", amount: totalToCollect, color: "text-blue-600" };
+      default:
+        return { icon: <Money size={22} className="text-muted-foreground" />, title: "Ödeme Yöntemi Belirtilmemiş", subtitle: "", amount: totalToCollect, color: "text-muted-foreground" };
     }
   };
 
-  const currentStatusIdx = STATUSES.findIndex(s => s.key === order?.status);
   const paymentInfo = getPaymentInfo();
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={PURPLE} /></View>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   if (!order) return null;
 
   return (
-    <View style={styles.flex}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={{ fontSize: 20 }}>←</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Sipariş Detayı</Text>
-          <Text style={styles.headerSub}>#{(order._id || order.id)?.slice(0, 8)}</Text>
-        </View>
-      </View>
+    <div className="min-h-screen bg-white pb-24">
+      <div className="sticky top-0 z-50 bg-white border-b border-border/40">
+        <div className="px-4 py-4 flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/courier/dashboard')}>
+            <ArrowLeft size={20} />
+          </Button>
+          <div className="flex-1">
+            <h1 className="text-lg font-bold">Sipariş Detayları</h1>
+            <p className="text-xs text-muted-foreground">#{order.id || order._id}</p>
+          </div>
+        </div>
+      </div>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Durum İlerleme */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Teslimat Durumu</Text>
-          <View style={styles.statusProgress}>
-            {STATUSES.map((s, i) => (
-              <TouchableOpacity
-                key={s.key}
-                style={[styles.statusStep, i <= currentStatusIdx && styles.statusStepActive, order.status === 'delivered' && styles.statusStepDisabled]}
-                onPress={() => i > currentStatusIdx && updateStatus(s.key)}
-                disabled={i <= currentStatusIdx || updating || order.status === 'delivered'}
-              >
-                <View style={[styles.statusDot, i <= currentStatusIdx && styles.statusDotActive]}>
-                  <Text style={{ color: i <= currentStatusIdx ? '#fff' : '#999', fontSize: 12, fontWeight: '700' }}>{i + 1}</Text>
-                </View>
-                <Text style={[styles.statusLabel, i <= currentStatusIdx && styles.statusLabelActive]}>{s.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {updating && <ActivityIndicator color={PURPLE} style={{ marginTop: 8 }} />}
-        </View>
+      <div className="p-4 space-y-6">
 
         {/* Ödeme Bilgisi */}
-        <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: PURPLE }]}>
-          <Text style={styles.sectionTitle}>Ödeme</Text>
-          <Text style={[styles.paymentLabel, { color: paymentInfo.color }]}>{paymentInfo.label}</Text>
-          {paymentInfo.amount && (
-            <Text style={styles.paymentAmount}>₺{paymentInfo.amount.toFixed(2)}</Text>
-          )}
-        </View>
+        <Card className={`border-border/40 border-l-4 ${
+          paymentInfo.color.includes('amber') ? 'border-l-amber-500' :
+          paymentInfo.color.includes('blue') ? 'border-l-blue-500' :
+          paymentInfo.color.includes('green') ? 'border-l-green-500' : 'border-l-gray-400'
+        }`}>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              {paymentInfo.icon} Ödeme Bilgisi
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className={`text-lg font-semibold ${paymentInfo.color}`}>{paymentInfo.title}</p>
+            {paymentInfo.subtitle && <p className="text-sm text-muted-foreground">{paymentInfo.subtitle}</p>}
+            {paymentInfo.amount && (
+              <div className="pt-3 border-t border-border/40">
+                <p className="text-xs text-muted-foreground mb-1">ALINACAK TUTAR</p>
+                <p className="text-3xl font-bold">₺{paymentInfo.amount.toFixed(2)}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-        {/* Aksiyon Butonları */}
-        <View style={styles.actionRow}>
-          {courierLocation && (
-            <TouchableOpacity style={styles.navBtn} onPress={openNavigation}>
-              <Text style={styles.navBtnText}>🧭 Navigasyon</Text>
-            </TouchableOpacity>
-          )}
-          {order.customer_phone && (
-            <TouchableOpacity style={styles.callBtn} onPress={callCustomer}>
-              <Text style={styles.callBtnText}>📞 Ara</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Navigasyon Butonu */}
+        {courierLocation && (
+          <Button
+            className="w-full bg-blue-600 hover:bg-blue-700"
+            onClick={() => {
+              const destination = order.status === 'assigned'
+                ? `${order.pickup_lat},${order.pickup_lng}`
+                : `${order.customer_lat},${order.customer_lng}`;
+              window.open(`https://www.google.com/maps/dir/?api=1&origin=${courierLocation.lat},${courierLocation.lng}&destination=${destination}&travelmode=driving`, '_blank');
+            }}
+          >
+            <Compass size={18} className="mr-2" weight="bold" />
+            Navigasyonu Başlat
+          </Button>
+        )}
+
+        {/* Durum Güncelle */}
+        <Card className="border-border/40">
+          <CardHeader>
+            <CardTitle className="text-base">Sipariş Durumu</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Select value={order.status} onValueChange={updateStatus} disabled={updating || order.status === 'delivered'}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="assigned">Atandı</SelectItem>
+                <SelectItem value="picked_up">Alındı</SelectItem>
+                <SelectItem value="in_transit">Yolda</SelectItem>
+                <SelectItem value="delivered">Teslim Edildi</SelectItem>
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
 
         {/* Restoran */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>🍔 Restoran</Text>
-          <Text style={styles.infoName}>{order.restaurant_name}</Text>
-          <Text style={styles.infoAddr}>📍 {order.pickup_address}</Text>
-        </View>
+        <Card className="border-border/40">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Storefront size={20} className="text-primary" />
+              <CardTitle className="text-base">Restoran</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="font-semibold">{order.restaurant_name}</p>
+            <div className="flex items-start gap-2 mt-2 text-sm">
+              <MapPin size={16} className="text-muted-foreground mt-0.5" />
+              <p className="text-muted-foreground">{order.pickup_address}</p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Müşteri */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>👤 Müşteri</Text>
-          <Text style={styles.infoName}>{order.customer_name}</Text>
-          <Text style={styles.infoAddr}>📍 {order.customer_address}</Text>
-          {order.customer_phone && (
-            <Text style={styles.infoAddr}>📞 {order.customer_phone}</Text>
-          )}
-        </View>
+        <Card className="border-border/40">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Package size={20} className="text-primary" />
+              <CardTitle className="text-base">Müşteri</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="font-semibold">{order.customer_name}</p>
+            <div className="flex items-start gap-2 text-sm">
+              <MapPin size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+              <p className="text-muted-foreground">{order.customer_address}</p>
+            </div>
+            {order.customer_phone && (
+              <div className="flex items-center gap-2">
+                <Phone size={16} className="text-muted-foreground" />
+                <a href={`tel:${order.customer_phone}`} className="text-sm text-primary hover:underline">
+                  {order.customer_phone}
+                </a>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Sipariş İçeriği */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>📦 Sipariş İçeriği</Text>
-          {order.items?.map((item, i) => (
-            <View key={i} style={styles.itemRow}>
-              <Text style={styles.itemName}>{item.name} ×{item.quantity}</Text>
-              <Text style={styles.itemPrice}>₺{item.price?.toFixed(2)}</Text>
-            </View>
-          ))}
-          <View style={styles.divider} />
-          <View style={styles.itemRow}>
-            <Text style={styles.totalLabel}>Toplam</Text>
-            <Text style={styles.totalAmount}>₺{order.total_amount?.toFixed(2)}</Text>
-          </View>
-          <View style={styles.itemRow}>
-            <Text style={[styles.totalLabel, { color: PURPLE }]}>Teslimat Ücreti</Text>
-            <Text style={[styles.totalAmount, { color: PURPLE }]}>₺{order.delivery_fee?.toFixed(2)}</Text>
-          </View>
-        </View>
+        <Card className="border-border/40">
+          <CardHeader>
+            <CardTitle className="text-base">Sipariş İçeriği</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {order.items?.map((item, index) => (
+                <div key={index} className="flex justify-between text-sm">
+                  <span>{item.name} ×{item.quantity}</span>
+                  <span className="font-medium">₺{item.price?.toFixed(2)}</span>
+                </div>
+              ))}
+              <div className="pt-4 mt-4 border-t border-border/40 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>Ara Toplam</span>
+                  <span>₺{order.total_amount?.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold">
+                  <span>Teslimat Ücreti</span>
+                  <span className="text-primary">₺{order.delivery_fee?.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        {order.notes ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>📝 Notlar</Text>
-            <Text style={styles.notes}>{order.notes}</Text>
-          </View>
-        ) : null}
-      </ScrollView>
-    </View>
+        {order.notes && (
+          <Card className="border-border/40">
+            <CardHeader>
+              <CardTitle className="text-base">Notlar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{order.notes}</p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#F8F9FA' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 10, backgroundColor: '#F0F0F0' },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111' },
-  headerSub: { fontSize: 12, color: '#999', fontFamily: 'monospace' },
-  content: { padding: 16, gap: 12 },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  statusProgress: { flexDirection: 'row', justifyContent: 'space-between' },
-  statusStep: { alignItems: 'center', flex: 1 },
-  statusStepActive: {},
-  statusStepDisabled: { opacity: 0.5 },
-  statusDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  statusDotActive: { backgroundColor: PURPLE },
-  statusLabel: { fontSize: 10, color: '#999', textAlign: 'center' },
-  statusLabelActive: { color: PURPLE, fontWeight: '700' },
-  paymentLabel: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-  paymentAmount: { fontSize: 32, fontWeight: '800', color: '#111' },
-  actionRow: { flexDirection: 'row', gap: 12 },
-  navBtn: { flex: 1, backgroundColor: '#1D4ED8', padding: 14, borderRadius: 12, alignItems: 'center' },
-  navBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  callBtn: { flex: 1, backgroundColor: '#059669', padding: 14, borderRadius: 12, alignItems: 'center' },
-  callBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  infoName: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 6 },
-  infoAddr: { fontSize: 14, color: '#555', marginBottom: 4 },
-  itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  itemName: { fontSize: 14, color: '#333', flex: 1 },
-  itemPrice: { fontSize: 14, fontWeight: '600', color: '#111' },
-  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 8 },
-  totalLabel: { fontSize: 14, fontWeight: '700', color: '#111' },
-  totalAmount: { fontSize: 16, fontWeight: '800', color: '#111' },
-  notes: { fontSize: 14, color: '#555', lineHeight: 20 },
-});

@@ -1,166 +1,312 @@
 import React, { useState } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
-} from 'react-native';
-import { useAuth } from '../../AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import api from '../../api';
+import { 
+  UserIcon, 
+  EnvelopeIcon, 
+  LockKeyIcon,
+  PhoneIcon,
+  StorefrontIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  ArrowRightIcon
+} from '@phosphor-icons/react';
 
-const PURPLE = '#5C3EFF';
-
-const ROLES = [
-  { key: 'courier', label: '🛵 Kurye' },
-  { key: 'restaurant', label: '🍔 Restoran' },
-];
-
-export default function RegisterScreen({ navigation }) {
-  const { register } = useAuth();
-  const [form, setForm] = useState({
-    name: '', email: '', phone: '', password: '', confirmPassword: '',
-    role: 'courier', restaurant_name: ''
+export default function RegisterPage() {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirmPassword: '',
+    role: 'customer',
+    restaurantName: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
-
-  const handleRegister = async () => {
-    if (!form.name || !form.email || !form.password || !form.phone) {
-      Alert.alert('Hata', 'Tüm alanları doldurun');
-      return;
-    }
-    if (form.password !== form.confirmPassword) {
-      Alert.alert('Hata', 'Şifreler eşleşmiyor');
-      return;
-    }
-    if (form.password.length < 6) {
-      Alert.alert('Hata', 'Şifre en az 6 karakter olmalıdır');
-      return;
-    }
-    if (form.role === 'restaurant' && !form.restaurant_name) {
-      Alert.alert('Hata', 'Restoran adını girin');
-      return;
-    }
-
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setLoading(true);
-    const result = await register(form);
-    setLoading(false);
+    setError('');
 
-    if (!result.success) {
-      Alert.alert('Kayıt Başarısız', result.error || 'Tekrar deneyin');
+    if (formData.password !== formData.confirmPassword) {
+      setError('Şifreler eşleşmiyor');
+      setLoading(false);
+      return;
+    }
+
+    // Backend'in beklediği formatta veri hazırla
+    const payload = {
+      name: formData.name.trim(),
+      email: formData.email.trim().toLowerCase(),
+      phone: formData.phone.trim(),
+      password: formData.password,
+      role: formData.role,
+      // Sadece restaurant rolü için gönder
+      ...(formData.role === 'restaurant' && { 
+        restaurant_name: formData.restaurantName.trim() 
+      })
+    };
+
+    try {
+      const response = await api.post('/auth/register', payload);
+      
+      // Backend yanıtını kontrol et
+      const data = response.data;
+      
+      if (data.success && data.token) {
+        // Başarılı kayıt
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        // Role göre yönlendirme
+        const userRole = data.user?.role || data.role;
+        
+        switch (userRole) {
+          case 'admin':
+            navigate('/admin/dashboard');
+            break;
+          case 'courier':
+            navigate('/courier/dashboard');
+            break;
+          case 'restaurant':
+            navigate('/restaurant/dashboard');
+            break;
+          default:
+            navigate('/');
+        }
+      } else {
+        // Başarısız yanıt (success: false veya token yok)
+        setError(data.message || 'Kayıt başarısız');
+      }
+      
+    } catch (err) {
+      console.error('Kayıt hatası:', err);
+      
+      const errorData = err.response?.data;
+      let errorMessage = 'Kayıt başarısız';
+      
+      if (errorData) {
+        if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#fff' }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <View style={styles.logo}>
-            <Text style={{ fontSize: 36 }}>🛵</Text>
-          </View>
-          <Text style={styles.title}>Hesap Oluştur</Text>
-          <Text style={styles.subtitle}>Getir-Heri'ye katılın</Text>
-        </View>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-3xl font-bold text-gray-900">
+            Hesap Oluştur
+          </CardTitle>
+          <p className="text-gray-600 mt-2">
+            Bugün Getir-Heri'ye katılın
+          </p>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+              <p className="font-medium">Hata:</p>
+              <p>{error}</p>
+            </div>
+          )}
+          
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Ad Soyad
+              </label>
+              <div className="relative">
+                <UserIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Adınızı girin"
+                />
+              </div>
+            </div>
 
-        {/* Rol Seçimi */}
-        <Text style={styles.label}>Hesap Türü</Text>
-        <View style={styles.roleRow}>
-          {ROLES.map(r => (
-            <TouchableOpacity
-              key={r.key}
-              style={[styles.roleBtn, form.role === r.key && styles.roleBtnActive]}
-              onPress={() => update('role', r.key)}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                E-posta Adresi
+              </label>
+              <div className="relative">
+                <EnvelopeIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="E-postanızı girin"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Telefon Numarası
+              </label>
+              <div className="relative">
+                <PhoneIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <input
+                  type="tel"
+                  required
+                  value={formData.phone}
+                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Telefon numaranızı girin"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Hesap Türü
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, role: 'customer'})}
+                  className={`p-3 text-center border rounded-lg ${
+                    formData.role === 'customer' 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <UserIcon className="mx-auto h-5 w-5 mb-1" />
+                  <span className="text-sm">Müşteri</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, role: 'courier'})}
+                  className={`p-3 text-center border rounded-lg ${
+                    formData.role === 'courier' 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <StorefrontIcon className="mx-auto h-5 w-5 mb-1" />
+                  <span className="text-sm">Kurye</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, role: 'restaurant'})}
+                  className={`p-3 text-center border rounded-lg ${
+                    formData.role === 'restaurant' 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <StorefrontIcon className="mx-auto h-5 w-5 mb-1" />
+                  <span className="text-sm">Restoran</span>
+                </button>
+              </div>
+            </div>
+
+            {formData.role === 'restaurant' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Restoran Adı
+                </label>
+                <div className="relative">
+                  <StorefrontIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    required={formData.role === 'restaurant'}
+                    value={formData.restaurantName}
+                    onChange={(e) => setFormData({...formData, restaurantName: e.target.value})}
+                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Restoran adını girin"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Şifre
+              </label>
+              <div className="relative">
+                <LockKeyIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  className="w-full pl-10 pr-12 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Şifre oluşturun (en az 6 karakter)"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? (
+                    <EyeSlashIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Şifreyi Onayla
+              </label>
+              <div className="relative">
+                <LockKeyIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Şifrenizi tekrar girin"
+                />
+              </div>
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
             >
-              <Text style={[styles.roleBtnText, form.role === r.key && styles.roleBtnTextActive]}>
-                {r.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+              {loading ? 'Hesap oluşturuluyor...' : 'Hesap Oluştur'}
+              <ArrowRightIcon className="ml-2 h-4 w-4" />
+            </Button>
+          </form>
 
-        <Text style={styles.label}>Ad Soyad</Text>
-        <TextInput style={styles.input} value={form.name} onChangeText={v => update('name', v)} placeholder="Adınız" placeholderTextColor="#aaa" />
-
-        <Text style={styles.label}>E-posta</Text>
-        <TextInput style={styles.input} value={form.email} onChangeText={v => update('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="ornek@email.com" placeholderTextColor="#aaa" />
-
-        <Text style={styles.label}>Telefon</Text>
-        <TextInput style={styles.input} value={form.phone} onChangeText={v => update('phone', v)} keyboardType="phone-pad" placeholder="05xx xxx xx xx" placeholderTextColor="#aaa" />
-
-        {form.role === 'restaurant' && (
-          <>
-            <Text style={styles.label}>Restoran Adı</Text>
-            <TextInput style={styles.input} value={form.restaurant_name} onChangeText={v => update('restaurant_name', v)} placeholder="Restoranınızın adı" placeholderTextColor="#aaa" />
-          </>
-        )}
-
-        <Text style={styles.label}>Şifre</Text>
-        <View style={styles.passwordRow}>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            value={form.password}
-            onChangeText={v => update('password', v)}
-            secureTextEntry={!showPassword}
-            placeholder="En az 6 karakter"
-            placeholderTextColor="#aaa"
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-            <Text style={{ fontSize: 18 }}>{showPassword ? '🙈' : '👁️'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.label}>Şifre Tekrar</Text>
-        <TextInput
-          style={styles.input}
-          value={form.confirmPassword}
-          onChangeText={v => update('confirmPassword', v)}
-          secureTextEntry={!showPassword}
-          placeholder="Şifrenizi tekrarlayın"
-          placeholderTextColor="#aaa"
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleRegister}
-          disabled={loading}
-        >
-          {loading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.buttonText}>Hesap Oluştur</Text>
-          }
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.linkRow}>
-          <Text style={styles.linkText}>
-            Zaten hesabınız var mı? <Text style={styles.link}>Giriş Yap</Text>
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <div className="mt-6 text-center text-sm">
+            <span className="text-muted-foreground">Zaten hesabınız var mı? </span>
+            <Link to="/login" className="text-blue-600 hover:text-blue-500 font-medium">
+              Giriş yap
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, paddingBottom: 48 },
-  header: { alignItems: 'center', marginVertical: 32 },
-  logo: { width: 72, height: 72, borderRadius: 18, backgroundColor: PURPLE, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 26, fontWeight: '800', color: '#111', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#666' },
-  roleRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
-  roleBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center' },
-  roleBtnActive: { borderColor: PURPLE, backgroundColor: '#EEF0FF' },
-  roleBtnText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  roleBtnTextActive: { color: PURPLE },
-  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 4, marginTop: 12 },
-  input: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 15, color: '#111', backgroundColor: '#FAFAFA' },
-  passwordRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  eyeBtn: { padding: 13, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, backgroundColor: '#FAFAFA' },
-  button: { backgroundColor: PURPLE, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 28 },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  linkRow: { alignItems: 'center', marginTop: 20 },
-  linkText: { color: '#666', fontSize: 14 },
-  link: { color: PURPLE, fontWeight: '700' },
-});

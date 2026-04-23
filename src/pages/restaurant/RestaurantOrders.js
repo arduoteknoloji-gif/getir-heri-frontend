@@ -19,13 +19,13 @@ export default function RestaurantOrders() {
   const fetchOrders = useCallback(async () => {
     try {
       const { data } = await api.get('/orders');
-      // Backend { orders: [...] } formatında dönüyor
-      const ordersData = data?.orders || (Array.isArray(data) ? data : []);
+      // GÜVENLİK: data her zaman dizi olmayabilir
+      const ordersData = Array.isArray(data) ? data : (data?.data || []);
       setOrders(ordersData);
     } catch (error) {
       console.error('Orders fetch error:', error);
       toast.error('Siparişler yüklenemedi');
-      setOrders([]);
+      setOrders([]); // Hata durumunda boş dizi
     } finally {
       setLoading(false);
     }
@@ -88,7 +88,7 @@ export default function RestaurantOrders() {
                   ) : (
                     orders.map((order) => (
                       <TableRow key={order._id || order.id}>
-                        <TableCell className="font-mono text-xs">#{(order.id || order._id)?.slice(0, 8)}</TableCell>
+                        <TableCell className="font-mono text-xs">#{order.id?.slice(0, 8) || order._id?.slice(0, 8)}</TableCell>
                         <TableCell>
                           <div>
                             <p className="text-sm font-medium">{order.customer_name}</p>
@@ -143,6 +143,7 @@ export default function RestaurantOrders() {
         </Card>
       </div>
 
+      {/* Live Tracking Dialog */}
       <Dialog open={trackingDialogOpen} onOpenChange={setTrackingDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -153,7 +154,7 @@ export default function RestaurantOrders() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">Sipariş ID</p>
-                  <p className="font-mono">#{(selectedOrder.id || selectedOrder._id)?.slice(0, 8)}</p>
+                  <p className="font-mono">#{selectedOrder.id?.slice(0, 8) || selectedOrder._id?.slice(0, 8)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Kurye</p>
@@ -168,6 +169,7 @@ export default function RestaurantOrders() {
                   {getStatusBadge(selectedOrder.status)}
                 </div>
               </div>
+
               <div className="border border-border/40 rounded-sm overflow-hidden">
                 <RouteMap
                   pickup={{ lat: selectedOrder.pickup_lat, lng: selectedOrder.pickup_lng }}

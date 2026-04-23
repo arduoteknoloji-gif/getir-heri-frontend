@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { useAuth } from '../../contexts/AuthContext';
-import {
-  EnvelopeIcon,
+import api from '../../api';
+import { 
+  EnvelopeIcon, 
   LockKeyIcon,
   EyeIcon,
   EyeSlashIcon,
@@ -12,22 +12,27 @@ import {
 } from '@phosphor-icons/react';
 
 export default function LoginPage() {
-  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const result = await login(formData.email, formData.password);
-
-    if (result.success) {
-      const role = result.data?.user?.role;
+    try {
+      const response = await api.post('/auth/login', formData);
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      
+      // Role göre yönlendirme
+      const { role } = response.data.user;
       switch (role) {
         case 'admin':
           navigate('/admin/dashboard');
@@ -41,11 +46,11 @@ export default function LoginPage() {
         default:
           navigate('/');
       }
-    } else {
-      setError(result.error || 'Giriş başarısız');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Giriş başarısız');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -65,7 +70,7 @@ export default function LoginPage() {
               {error}
             </div>
           )}
-
+          
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -77,7 +82,7 @@ export default function LoginPage() {
                   type="email"
                   required
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
                   className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="E-postanızı girin"
                 />
@@ -94,7 +99,7 @@ export default function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
                   className="w-full pl-10 pr-12 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Şifrenizi girin"
                 />
@@ -103,12 +108,30 @@ export default function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                  {showPassword ? (
+                    <EyeSlashIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center">
+                <input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <span className="ml-2 text-sm text-gray-600">Beni hatırla</span>
+              </label>
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-500">
+                Şifremi unuttum?
+              </Link>
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
+            >
               {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
               <ArrowRightIcon className="ml-2 h-4 w-4" />
             </Button>

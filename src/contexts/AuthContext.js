@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 
@@ -14,17 +14,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
-
+    
     if (storedToken && storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setToken(storedToken);
-        setUser(parsedUser);
-        axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-      } catch (e) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-      }
+      setToken(storedToken);
+      setUser(JSON.parse(storedUser));
+      axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
     }
     setLoading(false);
   }, []);
@@ -39,7 +33,7 @@ export function AuthProvider({ children }) {
 
       const data = response.data;
 
-      if (data.token && data.user) {
+      if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         setToken(data.token);
@@ -76,7 +70,7 @@ export function AuthProvider({ children }) {
 
       const data = response.data;
 
-      if (data.token && data.user) {
+      if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         setToken(data.token);
@@ -118,24 +112,25 @@ export function AuthProvider({ children }) {
 
   const updateUserStatus = async (status) => {
     if (!user?._id) return { success: false };
-
+    
     try {
-      // Backend sadece { message: "Durum güncellendi" } dönüyor
-      await axios.patch(
+      const response = await axios.patch(
         `${API_URL}/couriers/${user._id}/status`,
         { status },
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
-
-      const updatedUser = { ...user, status };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-      return { success: true };
+      
+      if (response.data.success) {
+        const updatedUser = { ...user, status };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        return { success: true };
+      }
     } catch (error) {
       console.error('Status update error:', error);
       toast.error('Durum güncellenemedi');
-      return { success: false };
     }
+    return { success: false };
   };
 
   const value = {

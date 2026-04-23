@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
@@ -17,7 +17,13 @@ export default function CourierDashboard() {
   const [earnings, setEarnings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('available');
-  const [courierStatus, setCourierStatus] = useState(user?.status || 'offline');
+  const [courierStatus, setCourierStatus] = useState('offline');
+
+  const messages = {
+    available: '✅ Artık müsaitsiniz. Yeni siparişler gelebilir.',
+    busy: '🟡 Meşgul moduna geçtiniz.',
+    offline: '🔴 Çevrim dışı oldunuz.'
+  };
 
   // Durum güncelleme
   const updateCourierStatus = useCallback(async (newStatus) => {
@@ -25,17 +31,18 @@ export default function CourierDashboard() {
     try {
       await api.patch(`/couriers/${user._id}/status`, { status: newStatus });
       setCourierStatus(newStatus);
-      const messages = {
-        available: '✅ Artık müsaitsiniz.',
-        busy: '🟡 Meşgul moduna geçtiniz.',
-        offline: '🔴 Çevrim dışı oldunuz.'
-      };
-      toast.success(messages[newStatus] || 'Durum güncellendi');
     } catch (error) {
       console.error("Status update error:", error);
       toast.error("Durum güncellenemedi");
     }
   }, [user?._id]);
+
+  // Status değiştiğinde toast göster
+  useEffect(() => {
+    if (courierStatus && messages[courierStatus]) {
+      toast.success(messages[courierStatus]);
+    }
+  }, [courierStatus]);
 
   // Sipariş kabul et
   const handleAcceptOrder = async (orderId) => {
@@ -45,7 +52,7 @@ export default function CourierDashboard() {
       toast.success('Sipariş kabul edildi!');
       fetchOrders();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Sipariş kabul edilemedi');
+      toast.error('Sipariş kabul edilemedi');
     }
   };
 
@@ -53,15 +60,15 @@ export default function CourierDashboard() {
   const fetchOrders = useCallback(async () => {
     try {
       const { data } = await api.get('/orders');
-      // Backend { orders: [...] } formatında dönüyor
-      const ordersData = data?.orders || (Array.isArray(data) ? data : []);
+      // GÜVENLİK: data her zaman dizi olmayabilir
+      const ordersData = Array.isArray(data) ? data : (data?.data || []);
       setOrders(ordersData);
     } catch (error) {
       console.error('Orders fetch error:', error);
       if (error.response?.status !== 401) {
         toast.error('Siparişler yüklenemedi');
       }
-      setOrders([]);
+      setOrders([]); // Hata durumunda boş dizi
     } finally {
       setLoading(false);
     }
@@ -83,6 +90,7 @@ export default function CourierDashboard() {
     navigate('/login');
   };
 
+  // GÜVENLİK: orders her zaman dizi olmalı
   const safeOrders = Array.isArray(orders) ? orders : [];
   const availableOrders = safeOrders.filter(o => o.status === 'pending');
   const myOrders = safeOrders.filter(o =>
@@ -110,9 +118,6 @@ export default function CourierDashboard() {
     }
     fetchOrders();
     fetchEarnings();
-    // Her 30 saniyede bir güncelle
-    const interval = setInterval(fetchOrders, 30000);
-    return () => clearInterval(interval);
   }, [user, fetchOrders, fetchEarnings, navigate]);
 
   if (loading) {
@@ -243,7 +248,7 @@ export default function CourierDashboard() {
                   <div className="flex items-center justify-between pt-3 border-t border-border/40">
                     <div>
                       <p className="text-xs text-muted-foreground">Teslimat Ücreti</p>
-                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2) || '0.00'}</p>
+                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2)}</p>
                     </div>
                     <Button onClick={() => handleAcceptOrder(order._id || order.id)} className="bg-primary hover:bg-primary/90">
                       Kabul Et
@@ -288,7 +293,7 @@ export default function CourierDashboard() {
                   <div className="flex items-center justify-between pt-3 border-t border-border/40">
                     <div>
                       <p className="text-xs text-muted-foreground">Teslimat Ücreti</p>
-                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2) || '0.00'}</p>
+                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2)}</p>
                     </div>
                     <Button variant="outline" size="sm">
                       Detayları Gör →
