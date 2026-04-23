@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { RestaurantLayout } from '../../components/RestaurantLayout';
 import api from '../../api';
 import { Card, CardContent } from '../../components/ui/card';
@@ -20,7 +20,7 @@ export default function RestaurantOrders() {
     try {
       const { data } = await api.get('/orders');
       // GÜVENLİK: data her zaman dizi olmayabilir
-      const ordersData = Array.isArray(data) ? data : (data?.data || []);
+      const ordersData = data?.orders || (Array.isArray(data) ? data : []);
       setOrders(ordersData);
     } catch (error) {
       console.error('Orders fetch error:', error);
