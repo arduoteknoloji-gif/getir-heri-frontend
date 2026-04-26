@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
@@ -17,13 +17,15 @@ export default function CourierDashboard() {
   const [earnings, setEarnings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('available');
-  const [courierStatus, setCourierStatus] = useState('offline');
 
-  const messages = {
-    available: '✅ Artık müsaitsiniz. Yeni siparişler gelebilir.',
-    busy: '🟡 Meşgul moduna geçtiniz.',
-    offline: '🔴 Çevrim dışı oldunuz.'
-  };
+  // localStorage'dan mevcut durumu oku - sayfa değişince sıfırlanmaz
+  const [courierStatus, setCourierStatus] = useState(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) return JSON.parse(stored).status || 'offline';
+    } catch (e) {}
+    return user?.status || 'offline';
+  });
 
   // Durum güncelleme
   const updateCourierStatus = useCallback(async (newStatus) => {
@@ -31,18 +33,25 @@ export default function CourierDashboard() {
     try {
       await api.patch(`/couriers/${user._id}/status`, { status: newStatus });
       setCourierStatus(newStatus);
+      // localStorage'daki user objesini de güncelle
+      try {
+        const stored = localStorage.getItem('user');
+        if (stored) {
+          const updatedUser = { ...JSON.parse(stored), status: newStatus };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+        }
+      } catch (e) {}
+      const messages = {
+        available: '✅ Artık müsaitsiniz.',
+        busy: '🟡 Meşgul moduna geçtiniz.',
+        offline: '🔴 Çevrim dışı oldunuz.'
+      };
+      toast.success(messages[newStatus] || 'Durum güncellendi');
     } catch (error) {
       console.error("Status update error:", error);
       toast.error("Durum güncellenemedi");
     }
   }, [user?._id]);
-
-  // Status değiştiğinde toast göster
-  useEffect(() => {
-    if (courierStatus && messages[courierStatus]) {
-      toast.success(messages[courierStatus]);
-    }
-  }, [courierStatus]);
 
   // Sipariş kabul et
   const handleAcceptOrder = async (orderId) => {
@@ -52,7 +61,7 @@ export default function CourierDashboard() {
       toast.success('Sipariş kabul edildi!');
       fetchOrders();
     } catch (error) {
-      toast.error('Sipariş kabul edilemedi');
+      toast.error(error.response?.data?.detail || 'Sipariş kabul edilemedi');
     }
   };
 
@@ -60,15 +69,14 @@ export default function CourierDashboard() {
   const fetchOrders = useCallback(async () => {
     try {
       const { data } = await api.get('/orders');
-      // GÜVENLİK: data her zaman dizi olmayabilir
-      const ordersData = Array.isArray(data) ? data : (data?.data || []);
+      const ordersData = data?.orders || (Array.isArray(data) ? data : []);
       setOrders(ordersData);
     } catch (error) {
       console.error('Orders fetch error:', error);
       if (error.response?.status !== 401) {
         toast.error('Siparişler yüklenemedi');
       }
-      setOrders([]); // Hata durumunda boş dizi
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -90,7 +98,6 @@ export default function CourierDashboard() {
     navigate('/login');
   };
 
-  // GÜVENLİK: orders her zaman dizi olmalı
   const safeOrders = Array.isArray(orders) ? orders : [];
   const availableOrders = safeOrders.filter(o => o.status === 'pending');
   const myOrders = safeOrders.filter(o =>
@@ -118,6 +125,8 @@ export default function CourierDashboard() {
     }
     fetchOrders();
     fetchEarnings();
+    const interval = setInterval(fetchOrders, 30000);
+    return () => clearInterval(interval);
   }, [user, fetchOrders, fetchEarnings, navigate]);
 
   if (loading) {
@@ -130,7 +139,6 @@ export default function CourierDashboard() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
       <div className="sticky top-0 z-50 bg-white border-b border-border/40">
         <div className="px-4 py-4">
           <div className="flex items-center justify-between">
@@ -150,7 +158,6 @@ export default function CourierDashboard() {
         </div>
       </div>
 
-      {/* Durum Seçici */}
       <div className="p-4">
         <Card className="border-border/40">
           <CardContent className="p-4">
@@ -171,7 +178,6 @@ export default function CourierDashboard() {
         </Card>
       </div>
 
-      {/* Kazanç Kartı */}
       {earnings && (
         <div className="px-4 pb-2">
           <Card className="border-border/40 bg-gradient-to-br from-primary/5 to-primary/10">
@@ -180,9 +186,7 @@ export default function CourierDashboard() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Toplam Kazanç</p>
                   <p className="text-3xl font-bold mt-1">₺{earnings.total_earnings?.toFixed(2) || '0.00'}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {earnings.total_deliveries || 0} teslimat
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{earnings.total_deliveries || 0} teslimat</p>
                 </div>
                 <div className="h-14 w-14 rounded-sm bg-primary flex items-center justify-center">
                   <CurrencyDollar size={32} weight="bold" className="text-white" />
@@ -193,7 +197,6 @@ export default function CourierDashboard() {
         </div>
       )}
 
-      {/* Tabs */}
       <div className="px-4 mb-4">
         <div className="flex gap-2 border-b border-border/40">
           <button
@@ -215,7 +218,6 @@ export default function CourierDashboard() {
         </div>
       </div>
 
-      {/* Sipariş Listesi */}
       <div className="px-4 pb-24 space-y-4">
         {activeTab === 'available' ? (
           availableOrders.length === 0 ? (
@@ -232,7 +234,7 @@ export default function CourierDashboard() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <CardTitle className="text-base">{order.restaurant_name}</CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">{order.pickup_address}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{order.customer_address}</p>
                     </div>
                     {getStatusBadge(order.status)}
                   </div>
@@ -248,7 +250,7 @@ export default function CourierDashboard() {
                   <div className="flex items-center justify-between pt-3 border-t border-border/40">
                     <div>
                       <p className="text-xs text-muted-foreground">Teslimat Ücreti</p>
-                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2)}</p>
+                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2) || '0.00'}</p>
                     </div>
                     <Button onClick={() => handleAcceptOrder(order._id || order.id)} className="bg-primary hover:bg-primary/90">
                       Kabul Et
@@ -277,7 +279,7 @@ export default function CourierDashboard() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <CardTitle className="text-base">{order.restaurant_name}</CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">{order.pickup_address}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{order.customer_address}</p>
                     </div>
                     {getStatusBadge(order.status)}
                   </div>
@@ -293,7 +295,7 @@ export default function CourierDashboard() {
                   <div className="flex items-center justify-between pt-3 border-t border-border/40">
                     <div>
                       <p className="text-xs text-muted-foreground">Teslimat Ücreti</p>
-                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2)}</p>
+                      <p className="text-lg font-bold text-primary">₺{order.delivery_fee?.toFixed(2) || '0.00'}</p>
                     </div>
                     <Button variant="outline" size="sm">
                       Detayları Gör →
@@ -306,7 +308,6 @@ export default function CourierDashboard() {
         )}
       </div>
 
-      {/* Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-border/40 z-50">
         <div className="flex items-center justify-around px-4 py-3">
           <button onClick={() => navigate('/courier/dashboard')} className="flex flex-col items-center gap-1 text-primary">
