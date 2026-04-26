@@ -24,9 +24,9 @@ export default function RestaurantNewOrder() {
     customer_lng: 28.9784,
     items: [{ name: '', quantity: 1, price: 0 }],
     total_amount: 0,
-    delivery_fee: 25,
+    delivery_fee: 40,
     notes: '',
-    payment_method: 'cash_on_delivery',
+    payment_method: formData.payment_method,
   });
 
   // DÜZELTME: restaurant_id user._id'den alınır
@@ -90,6 +90,7 @@ export default function RestaurantNewOrder() {
         items: formData.items,
         total_amount: formData.total_amount,
         notes: formData.notes
+        payment_method: formData.payment_method
       };
 
       await api.post('/orders', payload);
